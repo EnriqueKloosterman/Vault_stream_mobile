@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
 import { useTheme } from '@/shared/hooks/use-theme';
+import { useDownloadsStore } from '@/shared/services/download-manager';
 import { fetchLibraryItem, type LibraryItem } from '@/shared/services/libraryApi';
 import {
   fetchProgress,
@@ -31,6 +32,8 @@ export function ItemDetailScreen({ id }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<WatchProgressEntry | null>(null);
+  const [downloadState, setDownloadState] = useState<'idle' | 'working' | 'error'>('idle');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const load = useCallback(
     () =>
@@ -83,6 +86,20 @@ export function ItemDetailScreen({ id }: Props) {
       },
     });
   }, [item, progress]);
+
+  const startDownload = useCallback(() => {
+    setDownloadState('working');
+    void useDownloadsStore
+      .getState()
+      .start('movie', id)
+      .then(() => {
+        setDownloadState('idle');
+      })
+      .catch((e: unknown) => {
+        setDownloadError(getApiErrorMessage(e, 'No se pudo iniciar la descarga'));
+        setDownloadState('error');
+      });
+  }, [id]);
 
   if (loading) {
     return (
@@ -141,15 +158,30 @@ export function ItemDetailScreen({ id }: Props) {
             </ThemedText>
           ) : null}
         </View>
-        <Pressable
-          onPress={play}
-          style={[styles.playButton, { backgroundColor: colors.backgroundSelected }]}>
-          <ThemedText type="smallBold">
-            {progress && progress.currentTimeSec > 30
-              ? `▶ Reanudar (${formatTime(progress.currentTimeSec)})`
-              : '▶ Reproducir'}
+        <View style={styles.actions}>
+          <Pressable
+            onPress={play}
+            style={[styles.playButton, { backgroundColor: colors.backgroundSelected }]}>
+            <ThemedText type="smallBold">
+              {progress && progress.currentTimeSec > 30
+                ? `▶ Reanudar (${formatTime(progress.currentTimeSec)})`
+                : '▶ Reproducir'}
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={startDownload}
+            disabled={downloadState === 'working'}
+            style={[styles.playButton, { backgroundColor: colors.backgroundElement }]}>
+            <ThemedText type="smallBold">
+              {downloadState === 'working' ? '⬇ Descargando…' : '⬇ Descargar'}
+            </ThemedText>
+          </Pressable>
+        </View>
+        {downloadState === 'error' && downloadError ? (
+          <ThemedText type="small" themeColor="error">
+            {downloadError}
           </ThemedText>
-        </Pressable>
+        ) : null}
       </View>
     </ThemedView>
   );
@@ -159,7 +191,9 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: 16, gap: 16 },
   meta: { gap: 4 },
+  actions: { flexDirection: 'row', gap: 12 },
   playButton: {
+    flex: 1,
     borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',

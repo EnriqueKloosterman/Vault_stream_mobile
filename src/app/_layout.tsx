@@ -6,15 +6,23 @@ import { useColorScheme } from 'react-native';
 
 import { useAuthStore } from '@/shared/store/auth';
 import { useProgressQueueStore } from '@/shared/store/progress-queue';
+import { useDownloadsStore } from '@/shared/services/download-manager';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const hydrated = useAuthStore((s) => s.hydrated);
   const hydrate = useAuthStore((s) => s.hydrate);
+  const token = useAuthStore((s) => s.token);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (token) {
+      void useDownloadsStore.getState().init();
+    }
+  }, [token]);
 
   useEffect(() => {
     void useProgressQueueStore.getState().flush();

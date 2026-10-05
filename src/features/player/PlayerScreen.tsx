@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import { findLocalPlaybackFile } from '@/shared/services/download-manager';
 import {
   fetchLibraryItem,
   presignSubtitle,
@@ -129,11 +130,19 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
     let cancelled = false;
     void (async () => {
       try {
-        const { url } = await presignVideo(resolvedSource);
+        const localUri = itemType ? await findLocalPlaybackFile(itemType, id) : null;
         if (cancelled) {
           return;
         }
-        await player.replaceAsync(url);
+        if (localUri) {
+          await player.replaceAsync(localUri);
+        } else {
+          const { url } = await presignVideo(resolvedSource);
+          if (cancelled) {
+            return;
+          }
+          await player.replaceAsync(url);
+        }
         if (cancelled) {
           return;
         }
@@ -156,7 +165,7 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
     return () => {
       cancelled = true;
     };
-  }, [player, resolvedSource, startAt]);
+  }, [player, resolvedSource, startAt, itemType, id]);
 
   useEffect(() => {
     if (!resolvedSubtitle) {

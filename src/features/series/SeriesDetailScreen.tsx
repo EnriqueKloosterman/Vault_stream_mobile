@@ -11,6 +11,7 @@ import {
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
 import { useTheme } from '@/shared/hooks/use-theme';
+import { useDownloadsStore } from '@/shared/services/download-manager';
 import {
   fetchSeries,
   type Episode,
@@ -165,6 +166,15 @@ export function SeriesDetailScreen({ id }: Props) {
                     : `${entry.completedPct}% · ${formatTime(entry.currentTimeSec)}`}
                 </ThemedText>
               ) : null}
+              <Pressable
+                onPress={() => {
+                  void useDownloadsStore.getState().start('episode', item._id);
+                }}
+                hitSlop={8}>
+                <ThemedText type="small" themeColor="textSecondary">
+                  ⬇
+                </ThemedText>
+              </Pressable>
               <ThemedText type="small" themeColor="textSecondary">
                 ▶
               </ThemedText>
