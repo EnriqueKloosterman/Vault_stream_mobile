@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { useEvent, useEventListener } from 'expo';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -15,6 +15,8 @@ import {
   presignSubtitle,
   presignVideo,
 } from '@/shared/services/libraryApi';
+import type { MediaItemType } from '@/shared/services/progressApi';
+import { useProgressQueueStore } from '@/shared/store/progress-queue';
 import { getApiErrorMessage } from '@/shared/utils/api-error';
 import { decodeSubtitleBytes, findCueAt, parseSrt, type SrtCue } from '@/shared/utils/srt';
 
@@ -23,9 +25,13 @@ type Props = {
   r2Key?: string;
   subtitleKey?: string;
   title?: string;
+  itemType?: MediaItemType;
+  startAt?: number;
 };
 
-export function PlayerScreen({ id, r2Key, subtitleKey, title }: Props) {
+const REPORT_INTERVAL_MS = 10_000;
+
+export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt }: Props) {
   const player = useVideoPlayer(null, (instance) => {
     instance.timeUpdateEventInterval = 0.5;
   });
@@ -41,9 +47,52 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title }: Props) {
   );
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(true);
+  const currentTimeRef = useRef(0);
+  const lastReportRef = useRef(0);
+
+  const report = useCallback(
+    (positionSec: number, overridePct?: number) => {
+      if (!itemType) {
+        return;
+      }
+      const duration = Math.floor(player.duration || 0);
+      const position = Math.max(0, Math.floor(positionSec));
+      const completedPct =
+        overridePct !== undefined
+          ? overridePct
+          : duration > 0
+            ? Math.min(100, Math.round((position / duration) * 100))
+            : 0;
+      useProgressQueueStore.getState().enqueue({
+        itemType,
+        refId: id,
+        currentTimeSec: position,
+        durationSec: duration,
+        completedPct,
+        lastUpdated: Date.now(),
+      });
+    },
+    [itemType, id, player],
+  );
 
   useEventListener(player, 'timeUpdate', (event) => {
+    currentTimeRef.current = event.currentTime;
     setCurrentTime(event.currentTime);
+    const now = Date.now();
+    if (now - lastReportRef.current >= REPORT_INTERVAL_MS) {
+      lastReportRef.current = now;
+      report(event.currentTime);
+    }
+  });
+
+  useEventListener(player, 'playingChange', ({ isPlaying }) => {
+    if (!isPlaying) {
+      report(currentTimeRef.current);
+    }
+  });
+
+  useEventListener(player, 'playToEnd', () => {
+    report(currentTimeRef.current, 100);
   });
 
   useEffect(() => {
@@ -88,6 +137,9 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title }: Props) {
         if (cancelled) {
           return;
         }
+        if (startAt && startAt > 0) {
+          player.seekBy(startAt);
+        }
         player.play();
       } catch (e) {
         if (!cancelled) {
@@ -104,7 +156,7 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [player, resolvedSource]);
+  }, [player, resolvedSource, startAt]);
 
   useEffect(() => {
     if (!resolvedSubtitle) {

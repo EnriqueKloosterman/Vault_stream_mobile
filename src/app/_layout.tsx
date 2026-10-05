@@ -1,9 +1,11 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import NetInfo from '@react-native-community/netinfo';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { useAuthStore } from '@/shared/store/auth';
+import { useProgressQueueStore } from '@/shared/store/progress-queue';
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
@@ -13,6 +15,16 @@ export default function RootLayout() {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    void useProgressQueueStore.getState().flush();
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected) {
+        void useProgressQueueStore.getState().flush();
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   if (!hydrated) {
     return null;

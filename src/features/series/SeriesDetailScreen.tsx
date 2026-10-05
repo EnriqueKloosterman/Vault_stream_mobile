@@ -16,7 +16,12 @@ import {
   type Episode,
   type SeriesDetailResponse,
 } from '@/shared/services/libraryApi';
+import {
+  fetchProgress,
+  type WatchProgressEntry,
+} from '@/shared/services/progressApi';
 import { getApiErrorMessage } from '@/shared/utils/api-error';
+import { formatTime } from '@/shared/utils/time';
 
 type Props = { id: string };
 
@@ -30,6 +35,9 @@ export function SeriesDetailScreen({ id }: Props) {
   const [detail, setDetail] = useState<SeriesDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [progressByRef, setProgressByRef] = useState<
+    Record<string, WatchProgressEntry>
+  >({});
 
   const load = useCallback(
     () =>
@@ -57,17 +65,36 @@ export function SeriesDetailScreen({ id }: Props) {
     void load();
   }, [load]);
 
-  const playEpisode = useCallback((episode: Episode) => {
-    router.push({
-      pathname: '/player/[id]',
-      params: {
-        id: episode._id,
-        r2Key: episode.r2Key,
-        subtitleKey: episode.subtitleKey ?? '',
-        title: episode.title,
-      },
-    });
-  }, []);
+  useEffect(() => {
+    fetchProgress({ itemType: 'episode' })
+      .then((entries) => {
+        const map: Record<string, WatchProgressEntry> = {};
+        for (const entry of entries) {
+          map[entry.refId] = entry;
+        }
+        setProgressByRef(map);
+      })
+      .catch(() => undefined);
+  }, [id]);
+
+  const playEpisode = useCallback(
+    (episode: Episode) => {
+      const entry = progressByRef[episode._id];
+      const canResume = entry !== undefined && entry.currentTimeSec > 30;
+      router.push({
+        pathname: '/player/[id]',
+        params: {
+          id: episode._id,
+          r2Key: episode.r2Key,
+          subtitleKey: episode.subtitleKey ?? '',
+          title: episode.title,
+          itemType: 'episode',
+          ...(canResume ? { startAt: String(entry.currentTimeSec) } : {}),
+        },
+      });
+    },
+    [progressByRef],
+  );
 
   if (loading) {
     return (
@@ -119,21 +146,31 @@ export function SeriesDetailScreen({ id }: Props) {
             {section.title}
           </ThemedText>
         )}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => playEpisode(item)}
-            style={[styles.episode, { backgroundColor: colors.backgroundElement }]}>
-            <ThemedText type="code" themeColor="textSecondary">
-              E{String(item.number).padStart(2, '0')}
-            </ThemedText>
-            <ThemedText type="small" style={styles.episodeTitle} numberOfLines={2}>
-              {item.title}
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              ▶
-            </ThemedText>
-          </Pressable>
-        )}
+        renderItem={({ item }) => {
+          const entry = progressByRef[item._id];
+          return (
+            <Pressable
+              onPress={() => playEpisode(item)}
+              style={[styles.episode, { backgroundColor: colors.backgroundElement }]}>
+              <ThemedText type="code" themeColor="textSecondary">
+                E{String(item.number).padStart(2, '0')}
+              </ThemedText>
+              <ThemedText type="small" style={styles.episodeTitle} numberOfLines={2}>
+                {item.title}
+              </ThemedText>
+              {entry && entry.completedPct > 0 ? (
+                <ThemedText type="small" themeColor="textSecondary">
+                  {entry.completedPct === 100
+                    ? '✓'
+                    : `${entry.completedPct}% · ${formatTime(entry.currentTimeSec)}`}
+                </ThemedText>
+              ) : null}
+              <ThemedText type="small" themeColor="textSecondary">
+                ▶
+              </ThemedText>
+            </Pressable>
+          );
+        }}
       />
     </ThemedView>
   );
