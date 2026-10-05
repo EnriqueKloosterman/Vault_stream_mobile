@@ -1,38 +1,70 @@
-import { Link } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { useForm } from 'react-hook-form';
 
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
 import { useTheme } from '@/shared/hooks/use-theme';
+import { loginRequest } from '@/shared/services/authApi';
+import { useAuthStore } from '@/shared/store/auth';
+import { getApiErrorMessage } from '@/shared/utils/api-error';
 
 type LoginForm = { email: string; password: string };
 
 export function LoginScreen() {
   const colors = useTheme();
+  const token = useAuthStore((s) => s.token);
+  const login = useAuthStore((s) => s.login);
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>();
 
-  const onSubmit = (_data: LoginForm) => {
-    // TODO Fase 1: POST /auth/login via api -> useAuthStore.login(access_token)
-  };
+  const onSubmit = handleSubmit(async (data) => {
+    try {
+      const accessToken = await loginRequest(data.email.trim(), data.password);
+      await login(accessToken);
+    } catch (error) {
+      setError('root', {
+        message: getApiErrorMessage(error, 'No se pudo iniciar sesión'),
+      });
+    }
+  });
+
+  if (token) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <ThemedView style={styles.container}>
       <View style={styles.content}>
         <ThemedText type="subtitle">Iniciar sesión</ThemedText>
+        {errors.root?.message && (
+          <ThemedText type="small" themeColor="error">
+            {errors.root.message}
+          </ThemedText>
+        )}
         <TextInput
           style={[styles.input, inputStyle(colors)]}
           placeholder="Email"
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           keyboardType="email-address"
-          {...register('email', { required: 'Email obligatorio' })}
+          {...register('email', {
+            required: 'Email obligatorio',
+            pattern: {
+              value: /^\S+@\S+\.\S+$/,
+              message: 'Email no válido',
+            },
+          })}
         />
-        {errors.email && <ThemedText type="small">{errors.email.message}</ThemedText>}
+        {errors.email && (
+          <ThemedText type="small" themeColor="error">
+            {errors.email.message}
+          </ThemedText>
+        )}
         <TextInput
           style={[styles.input, inputStyle(colors)]}
           placeholder="Contraseña"
@@ -40,11 +72,12 @@ export function LoginScreen() {
           secureTextEntry
           {...register('password', { required: 'Contraseña obligatoria' })}
         />
-        {errors.password && <ThemedText type="small">{errors.password.message}</ThemedText>}
-        <ThemedText
-          type="linkPrimary"
-          onPress={handleSubmit(onSubmit)}
-          suppressHighlighting>
+        {errors.password && (
+          <ThemedText type="small" themeColor="error">
+            {errors.password.message}
+          </ThemedText>
+        )}
+        <ThemedText type="linkPrimary" onPress={onSubmit} suppressHighlighting>
           {isSubmitting ? 'Entrando…' : 'Entrar'}
         </ThemedText>
         <Link href="/auth/register" asChild>
