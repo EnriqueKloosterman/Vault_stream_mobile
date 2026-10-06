@@ -2,12 +2,14 @@ import { Link, Redirect } from 'expo-router';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { useForm } from 'react-hook-form';
 
+import { PasswordInput } from '@/shared/components/password-input';
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
 import { useTheme } from '@/shared/hooks/use-theme';
 import { registerRequest } from '@/shared/services/authApi';
 import { useAuthStore } from '@/shared/store/auth';
 import { getApiErrorMessage } from '@/shared/utils/api-error';
+import { toTextInputProps } from '@/shared/utils/rn-form';
 
 type RegisterForm = { email: string; password: string; confirm: string };
 
@@ -18,7 +20,6 @@ export function RegisterScreen() {
   const {
     register,
     handleSubmit,
-    getValues,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<RegisterForm>();
@@ -35,6 +36,30 @@ export function RegisterScreen() {
         message: getApiErrorMessage(error, 'No se pudo crear la cuenta'),
       });
     }
+  });
+
+  const emailField = register('email', {
+    required: 'Email obligatorio',
+    pattern: {
+      value: /^\S+@\S+\.\S+$/,
+      message: 'Email no válido',
+    },
+  });
+  const passwordField = register('password', {
+    required: 'Contraseña obligatoria',
+    minLength: {
+      value: 8,
+      message: 'Mínimo 8 caracteres',
+    },
+    maxLength: {
+      value: 72,
+      message: 'Máximo 72 caracteres',
+    },
+  });
+  const confirmField = register('confirm', {
+    required: 'Confirma la contraseña',
+    validate: (value, formValues) =>
+      value === formValues.password || 'Las contraseñas no coinciden',
   });
 
   if (token) {
@@ -56,52 +81,27 @@ export function RegisterScreen() {
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           keyboardType="email-address"
-          {...register('email', {
-            required: 'Email obligatorio',
-            pattern: {
-              value: /^\S+@\S+\.\S+$/,
-              message: 'Email no válido',
-            },
-          })}
+          {...toTextInputProps(emailField)}
         />
         {errors.email && (
           <ThemedText type="small" themeColor="error">
             {errors.email.message}
           </ThemedText>
         )}
-        <TextInput
-          style={[styles.input, inputStyle(colors)]}
+        <PasswordInput
           placeholder="Contraseña"
           placeholderTextColor={colors.textSecondary}
-          secureTextEntry
-          {...register('password', {
-            required: 'Contraseña obligatoria',
-            minLength: {
-              value: 8,
-              message: 'Mínimo 8 caracteres',
-            },
-            maxLength: {
-              value: 72,
-              message: 'Máximo 72 caracteres',
-            },
-          })}
+          {...toTextInputProps(passwordField)}
         />
         {errors.password && (
           <ThemedText type="small" themeColor="error">
             {errors.password.message}
           </ThemedText>
         )}
-        <TextInput
-          style={[styles.input, inputStyle(colors)]}
+        <PasswordInput
           placeholder="Repetir contraseña"
           placeholderTextColor={colors.textSecondary}
-          secureTextEntry
-          {...register('confirm', {
-            required: 'Confirma la contraseña',
-            validate: (value) =>
-              value === getValues('password') ||
-              'Las contraseñas no coinciden',
-          })}
+          {...toTextInputProps(confirmField)}
         />
         {errors.confirm && (
           <ThemedText type="small" themeColor="error">

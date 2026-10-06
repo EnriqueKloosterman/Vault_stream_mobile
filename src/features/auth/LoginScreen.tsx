@@ -2,12 +2,14 @@ import { Link, Redirect } from 'expo-router';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { useForm } from 'react-hook-form';
 
+import { PasswordInput } from '@/shared/components/password-input';
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
 import { useTheme } from '@/shared/hooks/use-theme';
 import { loginRequest } from '@/shared/services/authApi';
 import { useAuthStore } from '@/shared/store/auth';
 import { getApiErrorMessage } from '@/shared/utils/api-error';
+import { toTextInputProps } from '@/shared/utils/rn-form';
 
 type LoginForm = { email: string; password: string };
 
@@ -33,6 +35,17 @@ export function LoginScreen() {
     }
   });
 
+  const emailField = register('email', {
+    required: 'Email obligatorio',
+    pattern: {
+      value: /^\S+@\S+\.\S+$/,
+      message: 'Email no válido',
+    },
+  });
+  const passwordField = register('password', {
+    required: 'Contraseña obligatoria',
+  });
+
   if (token) {
     return <Redirect href="/" />;
   }
@@ -52,25 +65,17 @@ export function LoginScreen() {
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           keyboardType="email-address"
-          {...register('email', {
-            required: 'Email obligatorio',
-            pattern: {
-              value: /^\S+@\S+\.\S+$/,
-              message: 'Email no válido',
-            },
-          })}
+          {...toTextInputProps(emailField)}
         />
         {errors.email && (
           <ThemedText type="small" themeColor="error">
             {errors.email.message}
           </ThemedText>
         )}
-        <TextInput
-          style={[styles.input, inputStyle(colors)]}
+        <PasswordInput
           placeholder="Contraseña"
           placeholderTextColor={colors.textSecondary}
-          secureTextEntry
-          {...register('password', { required: 'Contraseña obligatoria' })}
+          {...toTextInputProps(passwordField)}
         />
         {errors.password && (
           <ThemedText type="small" themeColor="error">
