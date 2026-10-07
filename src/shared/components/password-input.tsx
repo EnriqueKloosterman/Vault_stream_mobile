@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { Spacing } from '@/shared/constants/theme';
 import { useTheme } from '@/shared/hooks/use-theme';
 
 export type PasswordInputProps = TextInputProps & {
@@ -47,7 +48,7 @@ export function PasswordInput({
           visible ? 'Ocultar contraseña' : 'Mostrar contraseña'
         }
         hitSlop={10}
-        style={styles.toggle}
+        style={({ pressed }) => [styles.toggle, pressed && styles.pressed]}
       >
         <Ionicons
           name={visible ? 'eye-off' : 'eye'}
@@ -68,12 +69,13 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.twoAndHalf,
     fontSize: 16,
   },
   toggle: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.twoAndHalf,
   },
+  pressed: { opacity: 0.6 },
 });

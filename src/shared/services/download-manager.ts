@@ -1,5 +1,13 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { Directory, File, Paths, type DownloadTask } from 'expo-file-system';
+import {
+  Directory,
+  DownloadTask,
+  File,
+  Paths,
+  type DownloadPauseState,
+  type DownloadProgress,
+} from 'expo-file-system';
 
 import {
   completeDownloadRequest,
@@ -14,6 +22,38 @@ import { getApiErrorMessage } from '@/shared/utils/api-error';
 
 const tasks = new Map<string, DownloadTask>();
 const lastServerReport = new Map<string, number>();
+const PAUSE_STATE_KEY = 'download.pauseState.';
+
+async function savePauseState(downloadId: string, task: DownloadTask): Promise<void> {
+  try {
+    if (task.state !== 'paused') {
+      return;
+    }
+    await AsyncStorage.setItem(
+      PAUSE_STATE_KEY + downloadId,
+      JSON.stringify(task.savable()),
+    );
+  } catch {
+    // Best-effort: sin este estado la descarga no podrá reanudarse entre reinicios.
+  }
+}
+
+async function loadPauseState(downloadId: string): Promise<DownloadPauseState | null> {
+  try {
+    const raw = await AsyncStorage.getItem(PAUSE_STATE_KEY + downloadId);
+    return raw ? (JSON.parse(raw) as DownloadPauseState) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function clearPauseState(downloadId: string): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(PAUSE_STATE_KEY + downloadId);
+  } catch {
+    // Best-effort.
+  }
+}
 
 function downloadsDirectory(): Directory {
   return new Directory(Paths.document, 'downloads');
@@ -82,7 +122,7 @@ type DownloadsState = {
   start: (itemType: MediaItemType, refId: string) => Promise<void>;
   togglePause: (downloadId: string) => Promise<void>;
   remove: (downloadId: string) => Promise<void>;
-  purgeExpired: () => Promise<void>;
+  purgeExpired: () => Promise<number>;
   setProgressLocal: (downloadId: string, progressPct: number) => void;
 };
 
@@ -98,6 +138,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
     tasks.delete(downloadId);
     lastServerReport.delete(downloadId);
     markInactive(downloadId);
+    await clearPauseState(downloadId);
     try {
       await completeDownloadRequest(downloadId, file.size);
     } catch {
@@ -106,15 +147,56 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
     await get().load();
   };
 
+  const progressHandler =
+    (downloadId: string) =>
+    ({ bytesWritten, totalBytes }: DownloadProgress) => {
+      if (totalBytes <= 0) {
+        return;
+      }
+      const progressPct = Math.min(99, Math.round((bytesWritten / totalBytes) * 100));
+      get().setProgressLocal(downloadId, progressPct);
+      const now = Date.now();
+      if (now - (lastServerReport.get(downloadId) ?? 0) >= 2000) {
+        lastServerReport.set(downloadId, now);
+        void reportDownloadProgress(downloadId, progressPct).catch(() => undefined);
+      }
+    };
+
   const runTask = async (downloadId: string, task: DownloadTask) => {
     try {
       const file = await task.downloadAsync();
       if (file) {
         await finishDownload(downloadId, file);
+      } else {
+        // Pausado: guardar el estado reanudable para poder continuar más tarde.
+        await savePauseState(downloadId, task);
       }
     } catch {
       tasks.delete(downloadId);
       markInactive(downloadId);
+      await clearPauseState(downloadId);
+    }
+  };
+
+  const resumeTask = async (downloadId: string, task: DownloadTask) => {
+    try {
+      const file = await task.resumeAsync();
+      if (file) {
+        await finishDownload(downloadId, file);
+      } else {
+        // Pausado de nuevo durante la reanudación.
+        markInactive(downloadId);
+        set((state) => ({
+          pausedIds: state.pausedIds.includes(downloadId)
+            ? state.pausedIds
+            : [...state.pausedIds, downloadId],
+        }));
+        await savePauseState(downloadId, task);
+      }
+    } catch {
+      markInactive(downloadId);
+      // Los datos de reanudación ya no sirven: el siguiente intento arrancará de cero.
+      await clearPauseState(downloadId);
     }
   };
 
@@ -161,24 +243,14 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
       if (tasks.has(downloadId)) {
         return;
       }
+      await clearPauseState(downloadId);
       ensureDownloadsDirectory();
       const destination = new File(Paths.document, 'downloads', `${downloadId}.mp4`);
       if (destination.exists) {
         destination.delete();
       }
       const task = File.createDownloadTask(url, destination, {
-        onProgress: ({ bytesWritten, totalBytes }) => {
-          if (totalBytes <= 0) {
-            return;
-          }
-          const progressPct = Math.min(99, Math.round((bytesWritten / totalBytes) * 100));
-          get().setProgressLocal(downloadId, progressPct);
-          const now = Date.now();
-          if (now - (lastServerReport.get(downloadId) ?? 0) >= 2000) {
-            lastServerReport.set(downloadId, now);
-            void reportDownloadProgress(downloadId, progressPct).catch(() => undefined);
-          }
-        },
+        onProgress: progressHandler(downloadId),
       });
       tasks.set(downloadId, task);
       set((state) => ({
@@ -194,6 +266,30 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
     togglePause: async (downloadId) => {
       const task = tasks.get(downloadId);
       if (!task) {
+        // Reanudación entre reinicios: restaurar la tarea desde el estado persistido.
+        let restored: DownloadTask | null = null;
+        const saved = await loadPauseState(downloadId);
+        if (saved) {
+          try {
+            restored = DownloadTask.fromSavable(saved, {
+              onProgress: progressHandler(downloadId),
+            });
+          } catch {
+            await clearPauseState(downloadId);
+          }
+        }
+        if (restored) {
+          tasks.set(downloadId, restored);
+          set((state) => ({
+            activeIds: state.activeIds.includes(downloadId)
+              ? state.activeIds
+              : [...state.activeIds, downloadId],
+            pausedIds: state.pausedIds.filter((id) => id !== downloadId),
+          }));
+          await resumeTask(downloadId, restored);
+          return;
+        }
+        // Sin estado reanudable no se puede continuar: se reinicia desde cero.
         const record = get().records.find((r) => r._id === downloadId);
         if (record && record.status !== 'completed') {
           await get().remove(downloadId);
@@ -218,22 +314,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
             ? state.activeIds
             : [...state.activeIds, downloadId],
         }));
-        try {
-          const file = await task.resumeAsync();
-          if (file) {
-            await finishDownload(downloadId, file);
-          } else {
-            // Pausado de nuevo durante la reanudación.
-            markInactive(downloadId);
-            set((state) => ({
-              pausedIds: state.pausedIds.includes(downloadId)
-                ? state.pausedIds
-                : [...state.pausedIds, downloadId],
-            }));
-          }
-        } catch {
-          markInactive(downloadId);
-        }
+        await resumeTask(downloadId, task);
       }
     },
 
@@ -244,6 +325,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
         tasks.delete(downloadId);
       }
       lastServerReport.delete(downloadId);
+      await clearPauseState(downloadId);
       const record = get().records.find((r) => r._id === downloadId);
       if (record) {
         try {
@@ -268,7 +350,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
         (record) => Date.parse(record.expiresAt) < Date.now(),
       );
       if (expired.length === 0) {
-        return;
+        return 0;
       }
       for (const record of expired) {
         try {
@@ -285,6 +367,7 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
       set((state) => ({
         records: state.records.filter((record) => !expiredIds.has(record._id)),
       }));
+      return expired.length;
     },
   };
 });

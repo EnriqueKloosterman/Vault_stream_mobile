@@ -2,12 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Tabs } from 'expo-router';
 
 import { useTheme } from '@/shared/hooks/use-theme';
+import { useDownloadsStore } from '@/shared/services/download-manager';
 import { useAuthStore } from '@/shared/store/auth';
 
 export default function TabsLayout() {
   const colors = useTheme();
   const hydrated = useAuthStore((s) => s.hydrated);
   const token = useAuthStore((s) => s.token);
+  const activeDownloadCount = useDownloadsStore((s) => s.activeIds.length);
 
   if (!hydrated) {
     return null;
@@ -37,6 +39,7 @@ export default function TabsLayout() {
         name="downloads"
         options={{
           title: 'Descargas',
+          tabBarBadge: activeDownloadCount > 0 ? activeDownloadCount : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="download-outline" size={size} color={color} />
           ),

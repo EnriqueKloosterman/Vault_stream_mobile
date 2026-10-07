@@ -7,6 +7,8 @@ export type LibraryItem = {
   type: ItemType;
   title: string;
   year?: number;
+  posterUrl?: string;
+  backdropUrl?: string;
   r2Key: string;
   seriesId?: string;
   folderPath?: string;
@@ -31,10 +33,18 @@ export type Episode = {
   seasonId: string;
   seriesId: string;
   watched?: boolean;
+  stillUrl?: string;
 };
 
 export type SeriesDetailResponse = {
-  series: { _id: string; title: string; year?: number };
+  series: {
+    _id: string;
+    title: string;
+    year?: number;
+    posterUrl?: string;
+    backdropUrl?: string;
+    synopsis?: string;
+  };
   seasons: { season: number; episodes: Episode[] }[];
 };
 
@@ -45,10 +55,12 @@ export type LibraryQuery = {
   limit?: number;
   type?: ItemType;
   q?: string;
+  signal?: AbortSignal;
 };
 
 export async function fetchLibrary(query: LibraryQuery = {}): Promise<LibraryListResponse> {
-  const { data } = await api.get<LibraryListResponse>('/library', { params: query });
+  const { signal, ...params } = query;
+  const { data } = await api.get<LibraryListResponse>('/library', { params, signal });
   return data;
 }
 

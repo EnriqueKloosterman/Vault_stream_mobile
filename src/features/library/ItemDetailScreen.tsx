@@ -1,9 +1,12 @@
-import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { router, Stack } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import { ErrorState, LoadingState } from '@/shared/components/state-views';
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
+import { Spacing } from '@/shared/constants/theme';
 import { useTheme } from '@/shared/hooks/use-theme';
 import { useDownloadsStore } from '@/shared/services/download-manager';
 import { fetchLibraryItem, type LibraryItem } from '@/shared/services/libraryApi';
@@ -104,7 +107,7 @@ export function ItemDetailScreen({ id }: Props) {
   if (loading) {
     return (
       <ThemedView style={styles.container}>
-        <ActivityIndicator style={styles.centered} color={colors.textSecondary} />
+        <LoadingState variant="fill" />
       </ThemedView>
     );
   }
@@ -112,14 +115,11 @@ export function ItemDetailScreen({ id }: Props) {
   if (error || !item) {
     return (
       <ThemedView style={styles.container}>
-        <View style={styles.centered}>
-          <ThemedText type="small" themeColor="error">
-            {error ?? 'Contenido no encontrado'}
-          </ThemedText>
-          <Pressable onPress={retry} style={styles.retry}>
-            <ThemedText type="link">Reintentar</ThemedText>
-          </Pressable>
-        </View>
+        <ErrorState
+          message={error ?? 'Contenido no encontrado'}
+          onRetry={retry}
+          variant="fill"
+        />
       </ThemedView>
     );
   }
@@ -128,10 +128,8 @@ export function ItemDetailScreen({ id }: Props) {
 
   return (
     <ThemedView style={styles.container}>
+      <Stack.Screen options={{ title: item.title }} />
       <View style={styles.content}>
-        <ThemedText type="subtitle" numberOfLines={3}>
-          {item.title}
-        </ThemedText>
         <View style={styles.meta}>
           <ThemedText type="small" themeColor="textSecondary">
             Película{item.year ? ` · ${item.year}` : ''}
@@ -142,7 +140,7 @@ export function ItemDetailScreen({ id }: Props) {
             </ThemedText>
           ) : null}
           {item.folderPath ? (
-            <ThemedText type="code" themeColor="textSecondary">
+            <ThemedText type="small" themeColor="textSecondary">
               {item.folderPath}
             </ThemedText>
           ) : null}
@@ -161,20 +159,40 @@ export function ItemDetailScreen({ id }: Props) {
         <View style={styles.actions}>
           <Pressable
             onPress={play}
-            style={[styles.playButton, { backgroundColor: colors.backgroundSelected }]}>
-            <ThemedText type="smallBold">
-              {progress && progress.currentTimeSec > 30
-                ? `▶ Reanudar (${formatTime(progress.currentTimeSec)})`
-                : '▶ Reproducir'}
-            </ThemedText>
+            accessibilityRole="button"
+            accessibilityLabel={
+              progress && progress.currentTimeSec > 30 ? 'Reanudar' : 'Reproducir'
+            }
+            style={({ pressed }) => [
+              styles.playButton,
+              { backgroundColor: colors.backgroundSelected },
+              pressed && styles.pressed,
+            ]}>
+            <View style={styles.buttonRow}>
+              <Ionicons name="play" size={16} color={colors.text} />
+              <ThemedText type="smallBold">
+                {progress && progress.currentTimeSec > 30
+                  ? `Reanudar (${formatTime(progress.currentTimeSec)})`
+                  : 'Reproducir'}
+              </ThemedText>
+            </View>
           </Pressable>
           <Pressable
             onPress={startDownload}
             disabled={downloadState === 'working'}
-            style={[styles.playButton, { backgroundColor: colors.backgroundElement }]}>
-            <ThemedText type="smallBold">
-              {downloadState === 'working' ? '⬇ Descargando…' : '⬇ Descargar'}
-            </ThemedText>
+            accessibilityRole="button"
+            accessibilityLabel="Descargar"
+            style={({ pressed }) => [
+              styles.playButton,
+              { backgroundColor: colors.backgroundElement },
+              pressed && styles.pressed,
+            ]}>
+            <View style={styles.buttonRow}>
+              <Ionicons name="download-outline" size={16} color={colors.text} />
+              <ThemedText type="smallBold">
+                {downloadState === 'working' ? 'Descargando…' : 'Descargar'}
+              </ThemedText>
+            </View>
           </Pressable>
         </View>
         {downloadState === 'error' && downloadError ? (
@@ -189,16 +207,16 @@ export function ItemDetailScreen({ id }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, gap: 16 },
-  meta: { gap: 4 },
-  actions: { flexDirection: 'row', gap: 12 },
+  content: { padding: Spacing.four, gap: Spacing.four },
+  meta: { gap: Spacing.one },
+  actions: { flexDirection: 'row', gap: Spacing.three },
+  buttonRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   playButton: {
     flex: 1,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: Spacing.threeAndHalf,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: Spacing.two,
   },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  retry: { paddingVertical: 8, paddingHorizontal: 12 },
+  pressed: { opacity: 0.6 },
 });

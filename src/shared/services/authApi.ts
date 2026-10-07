@@ -23,3 +23,7 @@ export async function registerRequest(
   });
   return data.access_token;
 }
+
+export async function deleteAccountRequest(): Promise<void> {
+  await api.delete('/users/me');
+}

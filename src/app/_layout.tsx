@@ -1,22 +1,40 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import NetInfo from '@react-native-community/netinfo';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { useAuthStore } from '@/shared/store/auth';
 import { useProgressQueueStore } from '@/shared/store/progress-queue';
 import { useDownloadsStore } from '@/shared/services/download-manager';
 
+void SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const hydrated = useAuthStore((s) => s.hydrated);
   const hydrate = useAuthStore((s) => s.hydrate);
   const token = useAuthStore((s) => s.token);
+  const previousTokenRef = useRef(token);
 
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (hydrated) {
+      void SplashScreen.hideAsync();
+    }
+  }, [hydrated]);
+
+  useEffect(() => {
+    const hadToken = previousTokenRef.current;
+    previousTokenRef.current = token;
+    if (hydrated && hadToken && !token) {
+      router.replace('/auth/login');
+    }
+  }, [token, hydrated]);
 
   useEffect(() => {
     if (token) {

@@ -14,8 +14,8 @@ export const Colors = {
     backgroundElement: '#F0F0F3',
     backgroundSelected: '#E0E1E6',
     textSecondary: '#60646C',
-    error: '#D32F2F',
-    link: '#3c87f7',
+    error: '#C62828',
+    link: '#1565c0',
   },
   dark: {
     text: '#ffffff',
@@ -55,15 +55,19 @@ export const Fonts = Platform.select({
   },
 });
 
+/** Escala de espaciado en múltiplos de 4 px (`half` = 2, `one` = 4, …). */
 export const Spacing = {
   half: 2,
   one: 4,
+  oneAndHalf: 6,
   two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  twoAndHalf: 10,
+  three: 12,
+  threeAndHalf: 14,
+  four: 16,
+  five: 20,
+  six: 24,
+  eight: 32,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
 export const MaxContentWidth = 800;

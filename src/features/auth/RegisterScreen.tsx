@@ -1,10 +1,11 @@
 import { Link, Redirect } from 'expo-router';
-import { StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useForm } from 'react-hook-form';
 
 import { PasswordInput } from '@/shared/components/password-input';
 import { ThemedText } from '@/shared/components/themed-text';
 import { ThemedView } from '@/shared/components/themed-view';
+import { Spacing } from '@/shared/constants/theme';
 import { useTheme } from '@/shared/hooks/use-theme';
 import { registerRequest } from '@/shared/services/authApi';
 import { useAuthStore } from '@/shared/store/auth';
@@ -69,7 +70,6 @@ export function RegisterScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.content}>
-        <ThemedText type="subtitle">Registro</ThemedText>
         {errors.root?.message && (
           <ThemedText type="small" themeColor="error">
             {errors.root.message}
@@ -108,9 +108,15 @@ export function RegisterScreen() {
             {errors.confirm.message}
           </ThemedText>
         )}
-        <ThemedText type="linkPrimary" onPress={onSubmit} suppressHighlighting>
-          {isSubmitting ? 'Creando…' : 'Crear cuenta'}
-        </ThemedText>
+        <Pressable
+          onPress={onSubmit}
+          accessibilityRole="button"
+          accessibilityLabel={isSubmitting ? 'Creando cuenta' : 'Crear cuenta'}
+          style={({ pressed }) => pressed && styles.pressed}>
+          <ThemedText type="link" themeColor="link">
+            {isSubmitting ? 'Creando…' : 'Crear cuenta'}
+          </ThemedText>
+        </Pressable>
         <Link href="/auth/login" asChild>
           <ThemedText type="small" themeColor="textSecondary">
             ¿Ya tienes cuenta? Inicia sesión
@@ -129,12 +135,13 @@ const inputStyle = (colors: ReturnType<typeof useTheme>) => ({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, gap: 12 },
+  content: { padding: Spacing.four, gap: Spacing.three },
   input: {
     borderWidth: 1,
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.twoAndHalf,
     fontSize: 16,
   },
+  pressed: { opacity: 0.6 },
 });
