@@ -61,6 +61,7 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
   const currentTimeRef = useRef(0);
   const durationRef = useRef(0);
   const lastReportRef = useRef(0);
+  const generationRef = useRef(0);
   const insets = useSafeAreaInsets();
 
   const report = useCallback(
@@ -114,11 +115,16 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
 
   useEffect(() => {
     return () => {
+      try {
+        player.pause();
+      } catch {
+        // Best-effort: el hook useVideoPlayer libera el player al desmontar.
+      }
       if (currentTimeRef.current > 0) {
         report(currentTimeRef.current);
       }
     };
-  }, [report]);
+  }, [player, report]);
 
   useEffect(() => {
     if (!chromeVisible || fullscreen) {
@@ -162,37 +168,39 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
     if (!resolvedSource) {
       return;
     }
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
     let cancelled = false;
     void (async () => {
       try {
         const localUri = itemType ? await findLocalPlaybackFile(itemType, id) : null;
-        if (cancelled) {
+        if (cancelled || generation !== generationRef.current) {
           return;
         }
         if (localUri) {
           await player.replaceAsync(localUri);
         } else {
           const { url } = await presignVideo(resolvedSource);
-          if (cancelled) {
+          if (cancelled || generation !== generationRef.current) {
             return;
           }
           await player.replaceAsync(url);
         }
-        if (cancelled) {
+        if (cancelled || generation !== generationRef.current) {
           return;
         }
         if (startAt && startAt > 0) {
-          player.seekBy(startAt);
+          player.currentTime = startAt;
         }
         player.play();
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && generation === generationRef.current) {
           setPrepareError(
             getApiErrorMessage(e, 'No se pudo iniciar la reproducción'),
           );
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && generation === generationRef.current) {
           setPreparing(false);
         }
       }
@@ -212,6 +220,9 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
         const { url } = await presignSubtitle(resolvedSubtitle);
         const response = await fetch(url);
         if (!response.ok) {
+          if (!cancelled) {
+            setCues([]);
+          }
           return;
         }
         const buffer = await response.arrayBuffer();
@@ -225,6 +236,9 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
         }
       } catch {
         // Los subtítulos son opcionales: se omite el overlay si fallan.
+        if (!cancelled) {
+          setCues([]);
+        }
       }
     })();
     return () => {
@@ -245,8 +259,13 @@ export function PlayerScreen({ id, r2Key, subtitleKey, title, itemType, startAt 
     (playerError ? getApiErrorMessage(playerError, PLAYBACK_ERROR) : PLAYBACK_ERROR);
 
   const close = useCallback(() => {
+    try {
+      player.pause();
+    } catch {
+      // Best-effort.
+    }
     router.back();
-  }, []);
+  }, [player]);
 
   const retry = useCallback(() => {
     setPrepareError(null);

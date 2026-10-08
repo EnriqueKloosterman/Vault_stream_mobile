@@ -28,13 +28,9 @@ export async function setAccessToken(token: string): Promise<void> {
 }
 
 export async function clearAccessToken(): Promise<void> {
-  try {
-    if (useSecureStore) {
-      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-      return;
-    }
-    await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
-  } catch {
-    // noop
+  if (useSecureStore) {
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    return;
   }
+  await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
 }

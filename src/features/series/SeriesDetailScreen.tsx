@@ -247,7 +247,10 @@ export function SeriesDetailScreen({ id }: Props) {
                   )
                 ) : null}
                 <Pressable
-                  onPress={() => startEpisodeDownload(item._id)}
+                  onPress={(e) => {
+                    e?.stopPropagation?.();
+                    startEpisodeDownload(item._id);
+                  }}
                   disabled={isWorking}
                   hitSlop={8}
                   style={({ pressed }) => pressed && styles.pressed}

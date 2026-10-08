@@ -22,6 +22,7 @@ import { getApiErrorMessage } from '@/shared/utils/api-error';
 
 const tasks = new Map<string, DownloadTask>();
 const lastServerReport = new Map<string, number>();
+const startLocks = new Map<string, Promise<void>>();
 const PAUSE_STATE_KEY = 'download.pauseState.';
 
 async function savePauseState(downloadId: string, task: DownloadTask): Promise<void> {
@@ -67,7 +68,11 @@ function ensureDownloadsDirectory(): void {
 }
 
 export function localFileFor(record: Pick<DownloadRecord, 'localPath'>): File {
-  return new File(Paths.document, ...record.localPath.split('/'));
+  const segments = record.localPath
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+  return new File(Paths.document, ...segments);
 }
 
 function findCompleted(
@@ -102,10 +107,43 @@ export async function findLocalPlaybackFile(
   try {
     const record = findCompleted(await fetchDownloads(), itemType, refId);
     if (!record) {
-      return null;
+      return scanDownloadsDirectory(itemType, refId);
     }
     const file = localFileFor(record);
-    return file.exists ? file.uri : null;
+    if (file.exists) {
+      return file.uri;
+    }
+    return scanDownloadsDirectory(itemType, refId);
+  } catch {
+    return scanDownloadsDirectory(itemType, refId);
+  }
+}
+
+function scanDownloadsDirectory(
+  _itemType: MediaItemType,
+  refId: string,
+): string | null {
+  try {
+    const directory = downloadsDirectory();
+    if (!directory.exists) {
+      return null;
+    }
+    // Fallback offline: si el store está vacío y no hay red, buscar por refId
+    // en los ficheros ya descargados. El nombre final se resuelve tras load().
+    const entries = directory.list() as unknown as (
+      | string
+      | { name?: string; uri?: string }
+    )[];
+    for (const entry of entries) {
+      const name = typeof entry === 'string' ? entry : entry?.name ?? '';
+      if (name.includes(refId)) {
+        const file = new File(Paths.document, 'downloads', name);
+        if (file.exists) {
+          return file.uri;
+        }
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -162,6 +200,16 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
       }
     };
 
+  const markError = (downloadId: string, message: string) => {
+    set((state) => ({
+      records: state.records.map((record) =>
+        record._id === downloadId
+          ? { ...record, status: 'error' as const, error: message }
+          : record,
+      ),
+    }));
+  };
+
   const runTask = async (downloadId: string, task: DownloadTask) => {
     try {
       const file = await task.downloadAsync();
@@ -171,9 +219,11 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
         // Pausado: guardar el estado reanudable para poder continuar más tarde.
         await savePauseState(downloadId, task);
       }
-    } catch {
+    } catch (e) {
       tasks.delete(downloadId);
+      lastServerReport.delete(downloadId);
       markInactive(downloadId);
+      markError(downloadId, getApiErrorMessage(e, 'La descarga falló'));
       await clearPauseState(downloadId);
     }
   };
@@ -193,8 +243,11 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
         }));
         await savePauseState(downloadId, task);
       }
-    } catch {
+    } catch (e) {
+      tasks.delete(downloadId);
+      lastServerReport.delete(downloadId);
       markInactive(downloadId);
+      markError(downloadId, getApiErrorMessage(e, 'La descarga falló'));
       // Los datos de reanudación ya no sirven: el siguiente intento arrancará de cero.
       await clearPauseState(downloadId);
     }
@@ -239,28 +292,57 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
     },
 
     start: async (itemType, refId) => {
-      const { downloadId, url } = await startDownloadRequest(itemType, refId);
-      if (tasks.has(downloadId)) {
+      const lockKey = `${itemType}:${refId}`;
+      const pending = startLocks.get(lockKey);
+      if (pending) {
+        await pending;
         return;
       }
-      await clearPauseState(downloadId);
-      ensureDownloadsDirectory();
-      const destination = new File(Paths.document, 'downloads', `${downloadId}.mp4`);
-      if (destination.exists) {
-        destination.delete();
-      }
-      const task = File.createDownloadTask(url, destination, {
-        onProgress: progressHandler(downloadId),
+      let releaseLock: () => void = () => undefined;
+      const lock = new Promise<void>((resolve) => {
+        releaseLock = resolve;
       });
-      tasks.set(downloadId, task);
-      set((state) => ({
-        activeIds: state.activeIds.includes(downloadId)
-          ? state.activeIds
-          : [...state.activeIds, downloadId],
-        pausedIds: state.pausedIds.filter((id) => id !== downloadId),
-      }));
-      await get().load();
-      await runTask(downloadId, task);
+      startLocks.set(lockKey, lock);
+      try {
+        const existing = get().records.find(
+          (r) =>
+            r.itemType === itemType &&
+            r.refId === refId &&
+            (r.status === 'pending' || r.status === 'downloading'),
+        );
+        if (existing && tasks.has(existing._id)) {
+          return;
+        }
+        const { downloadId, url } = await startDownloadRequest(itemType, refId);
+        if (tasks.has(downloadId)) {
+          return;
+        }
+        await clearPauseState(downloadId);
+        ensureDownloadsDirectory();
+        const destination = new File(Paths.document, 'downloads', `${downloadId}.mp4`);
+        if (destination.exists) {
+          try {
+            destination.delete();
+          } catch {
+            // Si el fichero está bloqueado, se continúa: la tarea lo sobrescribe.
+          }
+        }
+        const task = File.createDownloadTask(url, destination, {
+          onProgress: progressHandler(downloadId),
+        });
+        tasks.set(downloadId, task);
+        set((state) => ({
+          activeIds: state.activeIds.includes(downloadId)
+            ? state.activeIds
+            : [...state.activeIds, downloadId],
+          pausedIds: state.pausedIds.filter((id) => id !== downloadId),
+        }));
+        await get().load();
+        await runTask(downloadId, task);
+      } finally {
+        startLocks.delete(lockKey);
+        releaseLock();
+      }
     },
 
     togglePause: async (downloadId) => {
@@ -353,6 +435,17 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
         return 0;
       }
       for (const record of expired) {
+        const task = tasks.get(record._id);
+        if (task) {
+          try {
+            task.cancel();
+          } catch {
+            // Best-effort.
+          }
+          tasks.delete(record._id);
+        }
+        lastServerReport.delete(record._id);
+        await clearPauseState(record._id);
         try {
           const file = localFileFor(record);
           if (file.exists) {
@@ -366,6 +459,8 @@ export const useDownloadsStore = create<DownloadsState>((set, get) => {
       const expiredIds = new Set(expired.map((record) => record._id));
       set((state) => ({
         records: state.records.filter((record) => !expiredIds.has(record._id)),
+        activeIds: state.activeIds.filter((id) => !expiredIds.has(id)),
+        pausedIds: state.pausedIds.filter((id) => !expiredIds.has(id)),
       }));
       return expired.length;
     },

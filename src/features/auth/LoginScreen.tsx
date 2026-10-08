@@ -22,12 +22,16 @@ export function LoginScreen() {
     register,
     handleSubmit,
     setError,
+    watch,
     formState: { errors, isSubmitting },
-  } = useForm<LoginForm>();
+  } = useForm<LoginForm>({
+    defaultValues: { email: '', password: '' },
+  });
 
   const onSubmit = handleSubmit(async (data) => {
     try {
-      const accessToken = await loginRequest(data.email.trim(), data.password);
+      const email = (data.email ?? '').trim();
+      const accessToken = await loginRequest(email, data.password ?? '');
       await login(accessToken);
     } catch (error) {
       setError('root', {
@@ -38,13 +42,13 @@ export function LoginScreen() {
 
   const emailField = register('email', {
     required: 'Email obligatorio',
-    pattern: {
-      value: /^\S+@\S+\.\S+$/,
-      message: 'Email no válido',
-    },
+    validate: (value) =>
+      /^\S+@\S+\.\S+$/.test((value ?? '').trim()) || 'Email no válido',
   });
   const passwordField = register('password', {
     required: 'Contraseña obligatoria',
+    validate: (value) =>
+      (value ?? '').trim().length > 0 || 'Contraseña obligatoria',
   });
 
   if (token) {
@@ -65,7 +69,8 @@ export function LoginScreen() {
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           keyboardType="email-address"
-          {...toTextInputProps(emailField)}
+          // eslint-disable-next-line react-hooks/incompatible-library -- watch() controlado para TextInput
+          {...toTextInputProps(emailField, watch('email'))}
         />
         {errors.email && (
           <ThemedText type="small" themeColor="error">
@@ -75,7 +80,7 @@ export function LoginScreen() {
         <PasswordInput
           placeholder="Contraseña"
           placeholderTextColor={colors.textSecondary}
-          {...toTextInputProps(passwordField)}
+          {...toTextInputProps(passwordField, watch('password'))}
         />
         {errors.password && (
           <ThemedText type="small" themeColor="error">
@@ -84,6 +89,7 @@ export function LoginScreen() {
         )}
         <Pressable
           onPress={onSubmit}
+          disabled={isSubmitting}
           accessibilityRole="button"
           accessibilityLabel={isSubmitting ? 'Entrando' : 'Entrar'}
           style={({ pressed }) => pressed && styles.pressed}>

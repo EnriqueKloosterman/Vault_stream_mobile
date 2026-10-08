@@ -22,7 +22,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token });
   },
   logout: async () => {
-    await clearAccessToken();
-    set({ token: null });
+    try {
+      await clearAccessToken();
+    } finally {
+      set({ token: null });
+    }
   },
 }));

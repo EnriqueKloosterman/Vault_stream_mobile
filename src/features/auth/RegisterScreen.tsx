@@ -22,14 +22,18 @@ export function RegisterScreen() {
     register,
     handleSubmit,
     setError,
+    watch,
     formState: { errors, isSubmitting },
-  } = useForm<RegisterForm>();
+  } = useForm<RegisterForm>({
+    defaultValues: { email: '', password: '', confirm: '' },
+  });
 
   const onSubmit = handleSubmit(async (data) => {
     try {
+      const email = (data.email ?? '').trim();
       const accessToken = await registerRequest(
-        data.email.trim(),
-        data.password,
+        email,
+        data.password ?? '',
       );
       await login(accessToken);
     } catch (error) {
@@ -41,20 +45,17 @@ export function RegisterScreen() {
 
   const emailField = register('email', {
     required: 'Email obligatorio',
-    pattern: {
-      value: /^\S+@\S+\.\S+$/,
-      message: 'Email no válido',
-    },
+    validate: (value) =>
+      /^\S+@\S+\.\S+$/.test((value ?? '').trim()) || 'Email no válido',
   });
   const passwordField = register('password', {
     required: 'Contraseña obligatoria',
-    minLength: {
-      value: 8,
-      message: 'Mínimo 8 caracteres',
-    },
-    maxLength: {
-      value: 72,
-      message: 'Máximo 72 caracteres',
+    validate: (value) => {
+      const trimmed = (value ?? '').trim();
+      if (trimmed.length === 0) return 'Contraseña obligatoria';
+      if (value!.length < 8) return 'Mínimo 8 caracteres';
+      if (value!.length > 72) return 'Máximo 72 caracteres';
+      return true;
     },
   });
   const confirmField = register('confirm', {
@@ -81,7 +82,8 @@ export function RegisterScreen() {
           placeholderTextColor={colors.textSecondary}
           autoCapitalize="none"
           keyboardType="email-address"
-          {...toTextInputProps(emailField)}
+          // eslint-disable-next-line react-hooks/incompatible-library -- watch() controlado para TextInput
+          {...toTextInputProps(emailField, watch('email'))}
         />
         {errors.email && (
           <ThemedText type="small" themeColor="error">
@@ -91,7 +93,7 @@ export function RegisterScreen() {
         <PasswordInput
           placeholder="Contraseña"
           placeholderTextColor={colors.textSecondary}
-          {...toTextInputProps(passwordField)}
+          {...toTextInputProps(passwordField, watch('password'))}
         />
         {errors.password && (
           <ThemedText type="small" themeColor="error">
@@ -101,7 +103,7 @@ export function RegisterScreen() {
         <PasswordInput
           placeholder="Repetir contraseña"
           placeholderTextColor={colors.textSecondary}
-          {...toTextInputProps(confirmField)}
+          {...toTextInputProps(confirmField, watch('confirm'))}
         />
         {errors.confirm && (
           <ThemedText type="small" themeColor="error">
@@ -110,6 +112,7 @@ export function RegisterScreen() {
         )}
         <Pressable
           onPress={onSubmit}
+          disabled={isSubmitting}
           accessibilityRole="button"
           accessibilityLabel={isSubmitting ? 'Creando cuenta' : 'Crear cuenta'}
           style={({ pressed }) => pressed && styles.pressed}>
